@@ -23,7 +23,7 @@ func TestUser(t *testing.T) {
 	}
 
 	expected, _ := json.Marshal(user)
-	userJSON, err := user.ToJson()
+	userJSON, err := user.ToJSON()
 	if err != nil {
 		t.Fatal(err)
 	}
