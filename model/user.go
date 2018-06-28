@@ -17,8 +17,13 @@ type User struct {
 }
 
 // SetPassword : Set new password for the user.
-func (u *User) SetPassword(rawPassword string) {
-	u.Password = HashPassword(rawPassword)
+func (u *User) SetPassword(password string) error {
+	hashedPassword, err := HashPassword(password)
+	if err != nil {
+		return err
+	}
+	u.Password = hashedPassword
+	return nil
 }
 
 func (u User) String() string {

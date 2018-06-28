@@ -63,7 +63,8 @@ func (s *UserSQLStoreSuite) SetupTest() {
 
 	for _, u := range testUsers {
 		now := time.Now()
-		_, err := s.db.Query("INSERT INTO users (id, email, password, active, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $5)", u.uid, u.email, model.HashPassword(u.password), u.active, now)
+		hashedPassword, _ := model.HashPassword(u.password)
+		_, err := s.db.Query("INSERT INTO users (id, email, password, active, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $5)", u.uid, u.email, hashedPassword, u.active, now)
 		if err != nil {
 			s.T().Fatal(err)
 		}
@@ -100,6 +101,7 @@ func (s *UserSQLStoreSuite) TestGetUserByEmail() {
 	user, err := s.store.User().GetUserByEmail("testuser1@gmail.com")
 	if err != nil {
 		s.T().Fatal(err)
+
 	}
 
 	if user.Email != "testuser1@gmail.com" {

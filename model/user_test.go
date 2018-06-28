@@ -12,9 +12,12 @@ func TestUser(t *testing.T) {
 		Id:    "5d6e34c8-46b7-11e6-ba7c-cafec0ffee12",
 		Email: "testuser3@gmail.com",
 	}
-	user.SetPassword(password)
-	if user.Password != HashPassword(password) {
-		t.Errorf("Password digest not set properly.")
+	err := user.SetPassword(password)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !CheckPasswordHash(password, user.Password) {
+		t.Errorf("Password hashes are not matching.")
 	}
 
 	userStr := fmt.Sprintf("%s", user)
