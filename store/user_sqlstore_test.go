@@ -18,6 +18,7 @@ type UserSQLStoreSuite struct {
 }
 
 func (s *UserSQLStoreSuite) SetupSuite() {
+	s.T().Log("SetupSuite running for User.")
 	dbname := "wolffdb_test"
 	user := "wolffuser"
 	password := "password"
@@ -29,24 +30,32 @@ func (s *UserSQLStoreSuite) SetupSuite() {
 		s.T().Fatal(err)
 	}
 	s.db = db
-}
 
-func (s *UserSQLStoreSuite) SetupTest() {
-	query := `CREATE TABLE IF NOT EXISTS users (
+	queries := []string{
+		`DROP TABLE users`,
+		`CREATE TABLE IF NOT EXISTS users (
     id uuid NOT NULL,
     email varchar(200) NOT NULL,
     password varchar(100) NOT NULL,
+    name varchar(240),
     active boolean,
     created_at timestamptz,
     updated_at timestamptz
-    )`
-	_, err := s.db.Query(query)
-	if err != nil {
-		s.T().Fatal(err)
+    )`,
 	}
+	for _, query := range queries {
+		_, err = s.db.Query(query)
+		if err != nil {
+			s.T().Fatal(err)
+		}
+	}
+}
+
+func (s *UserSQLStoreSuite) SetupTest() {
+	s.T().Log("SetupTest User running.")
 
 	// Create some data for tests.
-	_, err = s.db.Query("DELETE FROM users")
+	_, err := s.db.Query("DELETE FROM users")
 	if err != nil {
 		s.T().Fatal(err)
 	}
@@ -82,9 +91,12 @@ func (s *UserSQLStoreSuite) SetupTest() {
 	// }
 }
 
-func TestSqlStoreSuite(t *testing.T) {
+func TestUserSqlStoreSuite(t *testing.T) {
 	s := new(UserSQLStoreSuite)
 	suite.Run(t, s)
+
+	// s2 := new(AuthTokenSQLStoreSuite)
+	// suite.Run(t, s2)
 }
 
 func (s *UserSQLStoreSuite) TestGetUserById() {
@@ -108,14 +120,14 @@ func (s *UserSQLStoreSuite) TestGetUserByEmail() {
 		s.T().Errorf("Get user by email id returned wrong data")
 	}
 
-	if user.Id != "5d6e34c8-46b7-11e6-ba7c-cafec0ffee00" {
+	if user.ID != "5d6e34c8-46b7-11e6-ba7c-cafec0ffee00" {
 		s.T().Errorf("Get user by email id returned wrong id.")
 	}
 }
 
 func (s *UserSQLStoreSuite) TestStoreUser() {
 	user := model.User{
-		Id:    "5d6e34c8-46b7-11e6-ba7c-cafec0ffee12",
+		ID:    "5d6e34c8-46b7-11e6-ba7c-cafec0ffee12",
 		Email: "testuser3@gmail.com",
 	}
 	user.SetPassword("password")
@@ -147,7 +159,7 @@ func (s *UserSQLStoreSuite) TestStoreUser() {
 
 	var user1 model.User
 	for res.Next() {
-		err := res.Scan(&user1.Id, &user1.Email, &user1.Password)
+		err := res.Scan(&user1.ID, &user1.Email, &user1.Password)
 		if err != nil {
 			s.T().Error(err)
 		}
@@ -168,7 +180,7 @@ func (s *UserSQLStoreSuite) TestUpdateUser() {
 
 	var user1, user2 model.User
 	for res.Next() {
-		err = res.Scan(&user1.Id, &user1.Email, &user1.Password, &user1.Active, &user1.CreatedAt, &user1.UpdatedAt)
+		err = res.Scan(&user1.ID, &user1.Email, &user1.Password, &user1.Active, &user1.CreatedAt, &user1.UpdatedAt)
 		if err != nil {
 			s.T().Error(err)
 		}
@@ -185,7 +197,7 @@ func (s *UserSQLStoreSuite) TestUpdateUser() {
 		s.T().Fatal(err)
 	}
 	for res.Next() {
-		err := res.Scan(&user2.Id, &user2.Email, &user2.Password, &user2.Active, &user2.CreatedAt, &user2.UpdatedAt)
+		err := res.Scan(&user2.ID, &user2.Email, &user2.Password, &user2.Active, &user2.CreatedAt, &user2.UpdatedAt)
 		if err != nil {
 			s.T().Error(err)
 		}

@@ -8,11 +8,12 @@ import (
 
 // User model
 type User struct {
-	Id        string    `json:"id"`
+	ID        string    `json:"id"`
 	CreatedAt time.Time `json:"created_at,omitempty"`
 	UpdatedAt time.Time `json:"updated_at,omitempty"`
 	Email     string    `json:"email"`
 	Password  string    `json:"-"`
+	Name      string    `json:"name,omitempty"`
 	Active    bool      `json:"active"`
 }
 
@@ -39,8 +40,8 @@ func (u User) ToJSON() ([]byte, error) {
 // PreSave : Call this method before passing the object to data store for saving.
 // Populates the Id and time fields.
 func (u *User) PreSave() {
-	if u.Id == "" {
-		u.Id = GenerateUUID()
+	if u.ID == "" {
+		u.ID = GenerateUUID()
 	}
 	u.CreatedAt = time.Now()
 	u.UpdatedAt = u.CreatedAt

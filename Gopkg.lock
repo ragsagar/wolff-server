@@ -21,6 +21,18 @@
   version = "v6.13.6"
 
 [[projects]]
+  name = "github.com/gorilla/context"
+  packages = ["."]
+  revision = "08b5f424b9271eedf6f9f0ce86cb9396ed337a42"
+  version = "v1.1.1"
+
+[[projects]]
+  name = "github.com/gorilla/mux"
+  packages = ["."]
+  revision = "e3702bed27f0d39777b0b37b664b6280e8ef8fbf"
+  version = "v1.6.2"
+
+[[projects]]
   branch = "master"
   name = "github.com/jinzhu/inflection"
   packages = ["."]
@@ -48,9 +60,16 @@
   version = "v1.2.0"
 
 [[projects]]
+  name = "github.com/stretchr/objx"
+  packages = ["."]
+  revision = "477a77ecc69700c7cdeb1fa9e129548e1c1c393c"
+  version = "v0.1.1"
+
+[[projects]]
   name = "github.com/stretchr/testify"
   packages = [
     "assert",
+    "mock",
     "require",
     "suite"
   ]
@@ -69,6 +88,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "11adbbd2fa7a3a1e38ffc15ba5509e75dbd800b999b0a2d260334441f3675a9b"
+  inputs-digest = "d9c4dd00d5be5bbf4367a4948d4a937cd7b6cba7b4f1438f4367b04151664674"
   solver-name = "gps-cdcl"
   solver-version = 1

@@ -14,7 +14,7 @@ func NewUserSQLStore(sqlStore SQLStore) *UserSQLStore {
 
 // GetUserByID : Fetch the user with given id as model.User
 func (uss UserSQLStore) GetUserByID(id string) (*model.User, error) {
-	user := model.User{Id: id}
+	user := model.User{ID: id}
 	err := uss.sqlStore.db.Select(&user)
 	if err != nil {
 		return nil, err

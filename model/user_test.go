@@ -9,7 +9,7 @@ import (
 func TestUser(t *testing.T) {
 	password := "password123"
 	user := User{
-		Id:    "5d6e34c8-46b7-11e6-ba7c-cafec0ffee12",
+		ID:    "5d6e34c8-46b7-11e6-ba7c-cafec0ffee12",
 		Email: "testuser3@gmail.com",
 	}
 	err := user.SetPassword(password)
