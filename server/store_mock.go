@@ -7,14 +7,16 @@ import (
 )
 
 type MockStore struct {
-	userStore  *MockUserStore
-	tokenStore *MockAuthTokenStore
+	userStore    *MockUserStore
+	tokenStore   *MockAuthTokenStore
+	expenseStore *MockExpenseStore
 }
 
 func NewMockStore() *MockStore {
 	return &MockStore{
-		userStore:  new(MockUserStore),
-		tokenStore: new(MockAuthTokenStore),
+		userStore:    new(MockUserStore),
+		tokenStore:   new(MockAuthTokenStore),
+		expenseStore: new(MockExpenseStore),
 	}
 }
 
@@ -24,6 +26,10 @@ func (m MockStore) User() store.UserStore {
 
 func (m MockStore) AuthToken() store.AuthTokenStore {
 	return m.tokenStore
+}
+
+func (m MockStore) Expense() store.ExpenseStore {
+	return m.expenseStore
 }
 
 type MockUserStore struct {
@@ -61,6 +67,20 @@ func (m *MockAuthTokenStore) Find(token string) (*model.AuthToken, error) {
 
 func (m *MockAuthTokenStore) Create(user *model.User) (*model.AuthToken, error) {
 	args := m.Called(user)
-	token := &model.AuthToken{UserID: user.Id, User: user, Key: "1234"}
+	token := &model.AuthToken{UserID: user.ID, User: user, Key: "1234"}
 	return token, args.Error(0)
+}
+
+type MockExpenseStore struct {
+	mock.Mock
+}
+
+func (m MockExpenseStore) GetByID(id string) (*model.Expense, error) {
+	args := m.Called(id)
+	return args.Get(0).(*model.Expense), args.Error(1)
+}
+
+func (m MockExpenseStore) Store(expense *model.Expense) error {
+	expense.PreSave()
+	return nil
 }

@@ -24,6 +24,7 @@ func NewServer(store store.Store) *Server {
 		Store:  store,
 	}
 	srv.InitUsers()
+	srv.InitExpenseAPIs()
 	return srv
 }
 

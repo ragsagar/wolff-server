@@ -23,7 +23,7 @@ func TestLoginUser(t *testing.T) {
 		t.Fatal(err)
 	}
 	expectedUser := model.User{
-		Id:        "b89505a4-a451-45e5-912e-4ef8c1441be6",
+		ID:        "b89505a4-a451-45e5-912e-4ef8c1441be6",
 		Email:     "testuser1@gmail.com",
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
@@ -31,7 +31,7 @@ func TestLoginUser(t *testing.T) {
 		Active:    true,
 	}
 
-	t1 := model.AuthToken{Key: "1234", UserID: expectedUser.Id, User: &expectedUser}
+	t1 := model.AuthToken{Key: "1234", UserID: expectedUser.ID, User: &expectedUser}
 
 	testStore.tokenStore.On("Find", "1234").Return(&t1, nil)
 	testStore.tokenStore.On("Create", mock.Anything).Return(nil)
@@ -77,7 +77,7 @@ func TestLoginUser(t *testing.T) {
 	responseJSON, _ = ioutil.ReadAll(recorder.Body)
 	json.Unmarshal(responseJSON, &responseObj)
 	assert.Equal(t, "1234", responseObj.AuthToken, "Generated auth token not matching.")
-	assert.Equal(t, expectedUser.Id, responseObj.UserID, "User Id in response is not what expected.")
+	assert.Equal(t, expectedUser.ID, responseObj.UserID, "User Id in response is not what expected.")
 	if status := recorder.Code; status != http.StatusCreated {
 		t.Errorf("handler returned wrong status code: got %v", status)
 	}
@@ -124,17 +124,17 @@ func TestCreateUser(t *testing.T) {
 	testStore := NewMockStore()
 	id := model.GenerateUUID()
 	expectedUser := model.User{
-		Id:        id,
+		ID:        id,
 		Email:     "testuser2@gmail.com",
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 		Active:    true,
 	}
-	t1 := model.AuthToken{Key: "1234", UserID: expectedUser.Id, User: &expectedUser}
+	t1 := model.AuthToken{Key: "1234", UserID: expectedUser.ID, User: &expectedUser}
 
 	testStore.tokenStore.On("Find", "1234").Return(&t1, nil)
 	testStore.tokenStore.On("Create", mock.Anything).Return(nil)
-	testStore.userStore.On("GetUserByID", expectedUser.Id).Return(&expectedUser, nil)
+	testStore.userStore.On("GetUserByID", expectedUser.ID).Return(&expectedUser, nil)
 	testStore.userStore.On("StoreUser", expectedUser).Return(nil)
 	// oat := model.OauthAccessToken{Token: "1234", Scopes: "user,service"}
 	// testStore.tokenStore.On("FindByToken", "1234").Return(&oat, nil)
@@ -194,13 +194,13 @@ func TestGetUserProfile(t *testing.T) {
 	testStore := NewMockStore()
 
 	expectedUser := model.User{
-		Id:        "b89505a4-a451-45e5-912e-4ef8c1441be6",
+		ID:        "b89505a4-a451-45e5-912e-4ef8c1441be6",
 		Email:     "testuser1@gmail.com",
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 		Active:    true,
 	}
-	t1 := model.AuthToken{Key: "1234", UserID: expectedUser.Id, User: &expectedUser}
+	t1 := model.AuthToken{Key: "1234", UserID: expectedUser.ID, User: &expectedUser}
 
 	testStore.tokenStore.On("Find", "1234").Return(&t1, nil)
 	// testStore.userStore.On("GetUserByID", expectedUser.Id).Return(&expectedUser, nil)
@@ -219,9 +219,9 @@ func TestGetUserProfile(t *testing.T) {
 		t.Errorf("handler returned wrong status code: got %v", status)
 	}
 
-	expectedUserJson, _ := expectedUser.ToJSON()
-	responseJson, _ := ioutil.ReadAll(recorder.Body)
-	if string(responseJson) != string(expectedUserJson) {
+	expectedUserJSON, _ := expectedUser.ToJSON()
+	responseJSON, _ := ioutil.ReadAll(recorder.Body)
+	if string(responseJSON) != string(expectedUserJSON) {
 		t.Errorf("Returned user not matching with expected user.")
 	}
 	testStore.userStore.AssertExpectations(t)

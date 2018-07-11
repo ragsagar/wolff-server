@@ -48,7 +48,7 @@ func loginUser(c *Context, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	response := map[string]string{
-		"user_id":    user.Id,
+		"user_id":    user.ID,
 		"auth_token": authToken.Key}
 	WriteJsonResponse(response, http.StatusCreated, w)
 }
@@ -108,7 +108,7 @@ func createUser(c *Context, w http.ResponseWriter, r *http.Request) {
 		WriteJsonResponse(response, http.StatusInternalServerError, w)
 		return
 	}
-	log.Println("Successfully created user with id", user.Id)
+	log.Println("Successfully created user with id", user.ID)
 	authToken, err := c.Srv.Store.AuthToken().Create(&user)
 	if err != nil {
 		log.Println("Error in generating token.")
@@ -117,7 +117,7 @@ func createUser(c *Context, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	response := map[string]string{
-		"user_id":    user.Id,
+		"user_id":    user.ID,
 		"auth_token": authToken.Key}
 	WriteJsonResponse(response, http.StatusCreated, w)
 }
