@@ -84,3 +84,25 @@ func (m MockExpenseStore) Store(expense *model.Expense) error {
 	expense.PreSave()
 	return nil
 }
+
+func (m MockExpenseStore) GetExpenses(userId string) ([]model.Expense, error) {
+	return nil, nil
+}
+
+func (m MockExpenseStore) StoreAccount(expenseAccount model.ExpenseAccount) error {
+	expenseAccount.PreSave()
+	return nil
+}
+
+func (m MockExpenseStore) GetExpenseAccounts(userId string) ([]model.ExpenseAccount, error) {
+	// args := m.Called(userId)
+	return nil, nil
+}
+
+func (m MockExpenseStore) GetAccountByID(id string) (*model.ExpenseAccount, error) {
+	return nil, nil
+}
+
+func (m MockExpenseStore) DeleteAccount(expenseAccount *model.ExpenseAccount) error {
+	return nil
+}
