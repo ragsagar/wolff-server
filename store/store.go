@@ -29,4 +29,9 @@ type AuthTokenStore interface {
 type ExpenseStore interface {
 	Store(expense *model.Expense) error
 	GetByID(id string) (*model.Expense, error)
+	GetExpenses(userId string) ([]model.Expense, error)
+	StoreAccount(expense model.ExpenseAccount) error
+	GetExpenseAccounts(userId string) ([]model.ExpenseAccount, error)
+	GetAccountByID(id string) (*model.ExpenseAccount, error)
+	DeleteAccount(*model.ExpenseAccount) error
 }

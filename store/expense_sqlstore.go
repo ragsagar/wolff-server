@@ -33,3 +33,45 @@ func (ess ExpenseSQLStore) GetByID(id string) (*model.Expense, error) {
 	}
 	return expense, nil
 }
+
+func (ess ExpenseSQLStore) GetExpenses(userId string) ([]model.Expense, error) {
+	var expenses []model.Expense
+	err := ess.sqlStore.db.Model(&expenses).Column("expense.*").Relation("Category").Relation("Account").Where("expense.user_id = ?", userId).Select()
+	if err != nil {
+		return nil, err
+	}
+	return expenses, nil
+}
+
+func (ess ExpenseSQLStore) StoreAccount(expenseAccount model.ExpenseAccount) error {
+	err := ess.sqlStore.db.Insert(&expenseAccount)
+	return err
+}
+
+func (ess ExpenseSQLStore) GetExpenseAccounts(userId string) ([]model.ExpenseAccount, error) {
+	var expenseAccounts []model.ExpenseAccount
+	err := ess.sqlStore.db.Model(&expenseAccounts).Where("user_id = ?", userId).Select()
+	if err != nil {
+		log.Println("Error in fetching accounts for user_id ", userId)
+		return nil, err
+	}
+	return expenseAccounts, nil
+}
+
+func (ess ExpenseSQLStore) GetAccountByID(id string) (*model.ExpenseAccount, error) {
+	expenseAccount := new(model.ExpenseAccount)
+	err := ess.sqlStore.db.Model(expenseAccount).Where("expense_account.id = ?", id).Select()
+	if err != nil {
+		log.Println("Error in deleting: ", err.Error())
+		return nil, err
+	}
+	return expenseAccount, nil
+}
+
+func (ess ExpenseSQLStore) DeleteAccount(expenseAccount *model.ExpenseAccount) error {
+	return ess.sqlStore.db.Delete(expenseAccount)
+}
+
+// func (ess ExpenseSQLStore) DeleteExpenseWithUserID(id, userId string) error {
+// 	return ess.sqlStore.db.Delete()
+// }
