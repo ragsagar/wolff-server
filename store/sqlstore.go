@@ -2,6 +2,7 @@ package store
 
 import (
 	"log"
+	"time"
 
 	"github.com/go-pg/pg"
 	"github.com/go-pg/pg/orm"
@@ -25,6 +26,14 @@ func NewSQLStore(user, password, database, addr string) SQLStore {
 		Password: password,
 		Database: database,
 		Addr:     addr,
+	})
+	sqlStore.db.OnQueryProcessed(func(event *pg.QueryProcessedEvent) {
+		query, err := event.FormattedQuery()
+		if err != nil {
+			panic(err)
+		}
+
+		log.Printf("%s %s", time.Since(event.StartTime), query)
 	})
 	sqlStore.userSQLStore = NewUserSQLStore(sqlStore)
 	sqlStore.authTokenStore = NewAuthTokenSQLStore(sqlStore)
