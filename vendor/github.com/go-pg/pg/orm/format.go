@@ -155,9 +155,8 @@ func (f *Formatter) WithParam(param string, value interface{}) Formatter {
 	return cp
 }
 
-func (f Formatter) Param(param string) (interface{}, bool) {
-	v, ok := f.namedParams[param]
-	return v, ok
+func (f Formatter) Param(param string) interface{} {
+	return f.namedParams[param]
 }
 
 func (f Formatter) Append(dst []byte, src string, params ...interface{}) []byte {
@@ -221,7 +220,7 @@ func (f Formatter) append(dst []byte, p *parser.Parser, params []interface{}) []
 			}
 
 			if f.namedParams != nil {
-				param, paramOK := f.Param(id)
+				param, paramOK := f.namedParams[id]
 				if paramOK {
 					dst = f.appendParam(dst, param)
 					continue
@@ -230,12 +229,7 @@ func (f Formatter) append(dst []byte, p *parser.Parser, params []interface{}) []
 
 			if !namedParamsOnce && len(params) > 0 {
 				namedParamsOnce = true
-				if len(params) > 0 {
-					tableParams, ok = newTableParams(params[len(params)-1])
-					if ok {
-						params = params[:len(params)-1]
-					}
-				}
+				tableParams, _ = newTableParams(params[len(params)-1])
 			}
 
 			if tableParams != nil {

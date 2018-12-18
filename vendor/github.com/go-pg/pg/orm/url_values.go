@@ -33,8 +33,28 @@ func (v URLValues) String(name string) string {
 	return values[0]
 }
 
+func (v URLValues) Bool(name string) (bool, error) {
+	if !v.Has(name) {
+		return false, nil
+	}
+	s := v.String(name)
+	if s == "" {
+		return true, nil
+	}
+	return strconv.ParseBool(s)
+}
+
+func (v URLValues) MaybeBool(name string) bool {
+	flag, _ := v.Bool(name)
+	return flag
+}
+
 func (v URLValues) Int(name string) (int, error) {
-	return strconv.Atoi(v.String(name))
+	s := v.String(name)
+	if s == "" {
+		return 0, nil
+	}
+	return strconv.Atoi(s)
 }
 
 func (v URLValues) MaybeInt(name string) int {
@@ -43,7 +63,11 @@ func (v URLValues) MaybeInt(name string) int {
 }
 
 func (v URLValues) Int64(name string) (int64, error) {
-	return strconv.ParseInt(v.String(name), 10, 64)
+	s := v.String(name)
+	if s == "" {
+		return 0, nil
+	}
+	return strconv.ParseInt(s, 10, 64)
 }
 
 func (v URLValues) MaybeInt64(name string) int64 {
@@ -52,11 +76,16 @@ func (v URLValues) MaybeInt64(name string) int64 {
 }
 
 func (v URLValues) Time(name string) (time.Time, error) {
-	n, err := v.Int64(name)
+	s := v.String(name)
+	if s == "" {
+		return time.Time{}, nil
+	}
+
+	n, err := strconv.ParseInt(s, 10, 64)
 	if err == nil {
 		return time.Unix(n, 0), nil
 	}
-	return types.ParseTimeString(v.String(name))
+	return types.ParseTimeString(s)
 }
 
 func (v URLValues) MaybeTime(name string) time.Time {
@@ -65,7 +94,11 @@ func (v URLValues) MaybeTime(name string) time.Time {
 }
 
 func (v URLValues) Duration(name string) (time.Duration, error) {
-	return time.ParseDuration(v.String(name))
+	s := v.String(name)
+	if s == "" {
+		return 0, nil
+	}
+	return time.ParseDuration(s)
 }
 
 func (v URLValues) MaybeDuration(name string) time.Duration {

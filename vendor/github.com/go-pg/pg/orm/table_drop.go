@@ -7,13 +7,8 @@ type DropTableOptions struct {
 	Cascade  bool
 }
 
-func DropTable(db DB, model interface{}, opt *DropTableOptions) (Result, error) {
-	q := NewQuery(db, model)
-
-	return q.db.Exec(dropTableQuery{
-		q:   q,
-		opt: opt,
-	})
+func DropTable(db DB, model interface{}, opt *DropTableOptions) error {
+	return NewQuery(db, model).DropTable(opt)
 }
 
 type dropTableQuery struct {
@@ -41,7 +36,7 @@ func (q dropTableQuery) AppendQuery(b []byte) ([]byte, error) {
 	if q.opt != nil && q.opt.IfExists {
 		b = append(b, "IF EXISTS "...)
 	}
-	b = q.q.appendTableName(b)
+	b = q.q.appendFirstTable(b)
 	if q.opt != nil && q.opt.Cascade {
 		b = append(b, " CASCADE"...)
 	}
