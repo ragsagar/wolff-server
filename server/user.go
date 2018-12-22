@@ -4,7 +4,9 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/go-pg/pg"
 	"github.com/ragsagar/wolff/model"
+	"github.com/ragsagar/wolff/store"
 )
 
 func (srv *Server) InitUsers() {
@@ -74,7 +76,13 @@ func createUser(c *Context, w http.ResponseWriter, r *http.Request) {
 	user.PreSave()
 	err := c.Srv.Store.User().StoreUser(user)
 	if err != nil {
-		writeJSONResponse(errorResponse(errorDbWrite), http.StatusInternalServerError, w)
+		log.Println(err.Error())
+		pgError := err.(pg.Error)
+		if pgError.IntegrityViolation() && pgError.Field('n') == store.UniqueEmailConstraint {
+			writeJSONResponse(errorResponse(errorEmailNotUnique), http.StatusBadRequest, w)
+		} else {
+			writeJSONResponse(errorResponse(errorDbWrite), http.StatusInternalServerError, w)
+		}
 		return
 	}
 	log.Println("Successfully created user with id", user.ID)

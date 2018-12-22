@@ -16,6 +16,7 @@ const errorDbDelete = "db_delete_error"
 const errorJSONGeneration = "error_in_generating_json"
 const errorNotAuthorized = "not_authorized"
 const errorNotFound = "not_found"
+const errorEmailNotUnique = "email_not_unique"
 
 type payloadValidator struct {
 	errs url.Values
