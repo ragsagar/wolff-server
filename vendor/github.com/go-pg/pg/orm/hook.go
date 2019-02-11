@@ -42,7 +42,9 @@ func (hookStubs) AfterDelete(_ DB) error {
 	return nil
 }
 
-func callHookSlice(slice reflect.Value, ptr bool, db DB, hook func(reflect.Value, DB) error) error {
+func callHookSlice(
+	slice reflect.Value, ptr bool, db DB, hook func(reflect.Value, DB) error,
+) error {
 	var firstErr error
 	for i := 0; i < slice.Len(); i++ {
 		var err error

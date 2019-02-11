@@ -1,7 +1,6 @@
 package orm
 
 import (
-	"errors"
 	"strconv"
 )
 
@@ -36,7 +35,7 @@ func (q createCompositeQuery) AppendQuery(b []byte) ([]byte, error) {
 		return nil, q.q.stickyErr
 	}
 	if q.q.model == nil {
-		return nil, errors.New("pg: Model(nil)")
+		return nil, errModelNil
 	}
 
 	table := q.q.model.Table()
@@ -64,5 +63,5 @@ func (q createCompositeQuery) AppendQuery(b []byte) ([]byte, error) {
 
 	b = append(b, ")"...)
 
-	return b, nil
+	return b, q.q.stickyErr
 }

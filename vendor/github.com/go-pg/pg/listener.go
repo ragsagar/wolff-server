@@ -75,7 +75,6 @@ func (ln *Listener) _conn() (*pool.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	cn.LockReaderBuffer()
 
 	if cn.InitedAt.IsZero() {
 		err := ln.db.initConn(cn)
@@ -184,7 +183,7 @@ func (ln *Listener) ReceiveTimeout(timeout time.Duration) (channel, payload stri
 		return "", "", err
 	}
 
-	err = cn.WithReader(timeout, func(rd *pool.Reader) error {
+	err = cn.WithReader(timeout, func(rd *internal.BufReader) error {
 		channel, payload, err = readNotification(rd)
 		return err
 	})
@@ -260,12 +259,15 @@ func (ln *Listener) initChannel() {
 					<-timer.C
 				}
 			case <-timer.C:
-				_ = ln.ping()
+				pingErr := ln.ping()
 				if healthy {
 					healthy = false
 				} else {
+					if pingErr == nil {
+						pingErr = errPingTimeout
+					}
 					ln.mu.Lock()
-					ln._reconnect(errPingTimeout)
+					ln._reconnect(pingErr)
 					ln.mu.Unlock()
 				}
 			case <-ln.exit:

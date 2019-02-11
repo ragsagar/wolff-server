@@ -29,11 +29,12 @@ func (q *joinQuery) AppendOn(app *condAppender) {
 
 type Query struct {
 	db        DB
+	fmter     QueryFormatter
 	stickyErr error
 
-	model       tableModel
-	ignoreModel bool
-	deleted     bool
+	model         TableModel
+	implicitModel bool
+	deleted       bool
 
 	with         []withQuery
 	tables       []FormatAppender
@@ -54,24 +55,19 @@ type Query struct {
 	selFor       *queryParamsAppender
 }
 
-var _ queryAppender = (*Query)(nil)
-
 func NewQuery(db DB, model ...interface{}) *Query {
 	return (&Query{}).DB(db).Model(model...)
 }
 
-// New returns new zero Query binded to the current db and model.
+// New returns new zero Query binded to the current db.
 func (q *Query) New() *Query {
-	return &Query{
-		db:          q.db,
-		model:       q.model,
-		ignoreModel: true,
-		deleted:     q.deleted,
+	cp := &Query{
+		db:            q.db,
+		model:         q.model,
+		implicitModel: true,
+		deleted:       q.deleted,
 	}
-}
-
-func (q *Query) AppendQuery(b []byte) ([]byte, error) {
-	return selectQuery{q: q}.AppendQuery(b)
+	return cp
 }
 
 // Copy returns copy of the Query.
@@ -86,12 +82,14 @@ func (q *Query) Copy() *Query {
 
 	copy := &Query{
 		db:        q.db,
+		fmter:     q.fmter,
 		stickyErr: q.stickyErr,
 
-		model:       q.model,
-		ignoreModel: q.ignoreModel,
-		deleted:     q.deleted,
+		model:         q.model,
+		implicitModel: q.implicitModel,
+		deleted:       q.deleted,
 
+		with:        q.with[:len(q.with):len(q.with)],
 		tables:      q.tables[:len(q.tables):len(q.tables)],
 		columns:     q.columns[:len(q.columns):len(q.columns)],
 		set:         q.set[:len(q.set):len(q.set)],
@@ -108,9 +106,7 @@ func (q *Query) Copy() *Query {
 		offset:      q.offset,
 		selFor:      q.selFor,
 	}
-	for _, with := range q.with {
-		copy = copy.With(with.name, with.query.Copy())
-	}
+
 	return copy
 }
 
@@ -123,9 +119,6 @@ func (q *Query) err(err error) *Query {
 
 func (q *Query) DB(db DB) *Query {
 	q.db = db
-	for _, with := range q.with {
-		with.query.db = db
-	}
 	return q
 }
 
@@ -142,15 +135,17 @@ func (q *Query) Model(model ...interface{}) *Query {
 	if err != nil {
 		q = q.err(err)
 	}
-	if q.ignoreModel {
-		q.ignoreModel = false
-	}
+	q.implicitModel = false
 	return q
+}
+
+func (q *Query) GetModel() TableModel {
+	return q.model
 }
 
 func (q *Query) softDelete() bool {
 	if q.model != nil {
-		return q.model.Table().HasFlag(softDelete)
+		return q.model.Table().SoftDeleteField != nil
 	}
 	return false
 }
@@ -323,7 +318,7 @@ func (q *Query) Set(set string, params ...interface{}) *Query {
 // Value overwrites model value for the column in INSERT and UPDATE queries.
 func (q *Query) Value(column string, value string, params ...interface{}) *Query {
 	if !q.hasModel() {
-		q.err(errors.New("pg: Model(nil)"))
+		q.err(errModelNil)
 		return q
 	}
 
@@ -361,7 +356,7 @@ func (q *Query) WhereOr(condition string, params ...interface{}) *Query {
 // WhereGroup encloses conditions added in the function in parentheses.
 //
 //    q.Where("TRUE").
-//    	WhereGroup(func(q *orm.Query) (*orm.Query, error)) {
+//    	WhereGroup(func(q *orm.Query) (*orm.Query, error) {
 //    		q = q.WhereOr("FALSE").WhereOr("TRUE").
 //    		return q, nil
 //    	})
@@ -376,7 +371,7 @@ func (q *Query) WhereGroup(fn func(*Query) (*Query, error)) *Query {
 // WhereOrGroup encloses conditions added in the function in parentheses.
 //
 //    q.Where("TRUE").
-//    	WhereOrGroup(func(q *orm.Query) (*orm.Query, error)) {
+//    	WhereOrGroup(func(q *orm.Query) (*orm.Query, error) {
 //    		q = q.Where("FALSE").Where("TRUE").
 //    		return q, nil
 //    	})
@@ -428,16 +423,16 @@ func (q *Query) addWhere(f sepFormatAppender) {
 	}
 }
 
-// WherePK adds condition based on the model primary key.
-// Typically it is the same as:
+// WherePK adds condition based on the model primary keys.
+// Usually it is the same as:
 //
 //    Where("id = ?id")
 func (q *Query) WherePK() *Query {
 	if !q.hasModel() {
-		q.err(errors.New("pg: Model(nil)"))
+		q.err(errModelNil)
 		return q
 	}
-	if q.model.Kind() == reflect.Slice {
+	if q.model.Kind() != reflect.Struct {
 		q.err(errors.New("pg: WherePK requires struct Model"))
 		return q
 	}
@@ -446,6 +441,28 @@ func (q *Query) WherePK() *Query {
 		return q
 	}
 	q.where = append(q.where, wherePKQuery{q})
+	return q
+}
+
+// WhereStruct generates conditions for the struct fields with non-zero values:
+//    - Foo int - Where("foo = ?", strct.Foo)
+//    - Foo []int - Where("foo = ANY(?)", pg.Array(strct.Foo))
+//    - FooNEQ int - Where("foo != ?", strct.Foo)
+//    - FooExclude int - Where("foo != ?", strct.Foo)
+//    - FooGT int - Where("foo > ?", strct.Foo)
+//    - FooGTE int - Where("foo >= ?", strct.Foo)
+//    - FooLT int - Where("foo < ?", strct.Foo)
+//    - FooLTE int - Where("foo <= ?", strct.Foo)
+//
+// urlvalues.Decode can be used to decode url.Values into the struct.
+//
+// Following field tags are recognized:
+//    - pg:"-" - field is ignored.
+//    - pg:",nowhere" - field is decoded but is ignored by WhereStruct.
+//    - pg:",nodecode" - field is not decoded but is used by WhereStruct.
+//    - pg:",required" - condition is added for zero values as well.
+func (q *Query) WhereStruct(strct interface{}) *Query {
+	q.where = append(q.where, newStructFilter(strct))
 	return q
 }
 
@@ -848,11 +865,7 @@ func (q *Query) SelectOrInsert(values ...interface{}) (inserted bool, _ error) {
 		return false, q.stickyErr
 	}
 
-	insertq := q
-	if len(insertq.columns) > 0 {
-		insertq = insertq.Copy()
-		insertq.columns = nil
-	}
+	var insertq *Query
 
 	var insertErr error
 	for i := 0; i < 5; i++ {
@@ -866,6 +879,15 @@ func (q *Query) SelectOrInsert(values ...interface{}) (inserted bool, _ error) {
 		}
 		if err != internal.ErrNoRows {
 			return false, err
+
+		}
+
+		if insertq == nil {
+			insertq = q
+			if len(insertq.columns) > 0 {
+				insertq = insertq.Copy()
+				insertq.columns = nil
+			}
 		}
 
 		res, err := insertq.Insert(values...)
@@ -953,13 +975,16 @@ func (q *Query) returningQuery(model Model, query interface{}) (Result, error) {
 // Delete deletes the model. When model has deleted_at column the row
 // is soft deleted instead.
 func (q *Query) Delete(values ...interface{}) (Result, error) {
-	if q.softDelete() {
-		q.model.setDeletedAt()
-		columns := q.columns
-		q.columns = nil
-		res, err := q.Column("deleted_at").Update(values...)
-		q.columns = columns
-		return res, err
+	if q.hasModel() {
+		table := q.model.Table()
+		if table.SoftDeleteField != nil {
+			q.model.setSoftDeleteField()
+			columns := q.columns
+			q.columns = nil
+			res, err := q.Column(table.SoftDeleteField.SQLName).Update(values...)
+			q.columns = columns
+			return res, err
+		}
 	}
 	return q.ForceDelete(values...)
 }
@@ -970,7 +995,7 @@ func (q *Query) ForceDelete(values ...interface{}) (Result, error) {
 		return nil, q.stickyErr
 	}
 	if q.model == nil {
-		return nil, errors.New("pg: Model(nil)")
+		return nil, errModelNil
 	}
 	q.deleted = true
 
@@ -1055,10 +1080,26 @@ func (q *Query) CopyTo(w io.Writer, query interface{}, params ...interface{}) (R
 
 func (q *Query) FormatQuery(b []byte, query string, params ...interface{}) []byte {
 	params = append(params, q.model)
+	if q.fmter != nil {
+		return q.fmter.FormatQuery(b, query, params...)
+	}
 	if q.db != nil {
 		return q.db.FormatQuery(b, query, params...)
 	}
 	return formatter.Append(b, query, params...)
+}
+
+var _ FormatAppender = (*Query)(nil)
+
+func (q *Query) AppendFormat(b []byte, f QueryFormatter) []byte {
+	cp := q.Copy()
+	cp.fmter = f
+	bb, err := selectQuery{q: cp}.AppendQuery(b)
+	if err != nil {
+		q.err(err)
+		return types.AppendError(b, err)
+	}
+	return bb
 }
 
 // Exists returns true or false depending if there are any rows matching the query.
@@ -1075,15 +1116,19 @@ func (q *Query) Exists() (bool, error) {
 }
 
 func (q *Query) hasModel() bool {
-	return !q.ignoreModel && q.model != nil
+	return q.model != nil && !q.model.IsNil()
+}
+
+func (q *Query) hasExplicitModel() bool {
+	return q.model != nil && !q.implicitModel
 }
 
 func (q *Query) modelHasTableName() bool {
-	return q.hasModel() && q.model.Table().Name != ""
+	return q.hasExplicitModel() && q.model.Table().FullName != ""
 }
 
 func (q *Query) modelHasTableAlias() bool {
-	return q.hasModel() && q.model.Table().Alias != ""
+	return q.hasExplicitModel() && q.model.Table().Alias != ""
 }
 
 func (q *Query) hasTables() bool {
@@ -1092,7 +1137,7 @@ func (q *Query) hasTables() bool {
 
 func (q *Query) appendFirstTable(b []byte) []byte {
 	if q.modelHasTableName() {
-		return q.FormatQuery(b, string(q.model.Table().Name))
+		return q.FormatQuery(b, string(q.model.Table().FullName))
 	}
 	if len(q.tables) > 0 {
 		b = q.tables[0].AppendFormat(b, q)
@@ -1103,7 +1148,7 @@ func (q *Query) appendFirstTable(b []byte) []byte {
 func (q *Query) appendFirstTableWithAlias(b []byte) []byte {
 	if q.modelHasTableName() {
 		table := q.model.Table()
-		b = q.FormatQuery(b, string(table.Name))
+		b = q.FormatQuery(b, string(table.FullName))
 		b = append(b, " AS "...)
 		b = append(b, table.Alias...)
 		return b
@@ -1161,9 +1206,6 @@ func (q *Query) mustAppendWhere(b []byte) ([]byte, error) {
 		return b, nil
 	}
 
-	if q.model == nil {
-		return nil, errors.New("pg: Model(nil)")
-	}
 	err := errors.New(
 		"pg: Update and Delete queries require Where clause (try WherePK)")
 	return nil, err
@@ -1182,10 +1224,12 @@ func (q *Query) appendWhere(b []byte) []byte {
 }
 
 func (q *Query) appendSoftDelete(b []byte) []byte {
+	b = append(b, '.')
+	b = append(b, q.model.Table().SoftDeleteField.Column...)
 	if q.deleted {
-		b = append(b, ".deleted_at IS NOT NULL"...)
+		b = append(b, " IS NOT NULL"...)
 	} else {
-		b = append(b, ".deleted_at IS NULL"...)
+		b = append(b, " IS NULL"...)
 	}
 	return b
 }
@@ -1196,10 +1240,15 @@ func (q *Query) appendUpdWhere(b []byte) []byte {
 
 func (q *Query) _appendWhere(b []byte, where []sepFormatAppender) []byte {
 	for i, f := range where {
+		start := len(b)
 		if i > 0 {
 			b = f.AppendSep(b)
 		}
+		before := len(b)
 		b = f.AppendFormat(b, q)
+		if len(b) == before {
+			b = b[:start]
+		}
 	}
 	return b
 }
@@ -1226,8 +1275,7 @@ func (q *Query) appendReturning(b []byte) []byte {
 	return b
 }
 
-func (q *Query) appendWith(b []byte) ([]byte, error) {
-	var err error
+func (q *Query) appendWith(b []byte) []byte {
 	b = append(b, "WITH "...)
 	for i, with := range q.with {
 		if i > 0 {
@@ -1235,16 +1283,11 @@ func (q *Query) appendWith(b []byte) ([]byte, error) {
 		}
 		b = types.AppendField(b, with.name, 1)
 		b = append(b, " AS ("...)
-
-		b, err = selectQuery{q: with.query}.AppendQuery(b)
-		if err != nil {
-			return nil, err
-		}
-
+		b = with.query.AppendFormat(b, q)
 		b = append(b, ')')
 	}
 	b = append(b, ' ')
-	return b, nil
+	return b
 }
 
 func (q *Query) isSliceModel() bool {

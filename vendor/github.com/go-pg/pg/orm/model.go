@@ -9,6 +9,8 @@ import (
 	"github.com/go-pg/pg/types"
 )
 
+var errModelNil = errors.New("pg: Model(nil)")
+
 type useQueryOne interface {
 	useQueryOne() bool
 }
@@ -25,8 +27,6 @@ type HooklessModel interface {
 
 	// AddModel adds ColumnScanner created by NewModel to the Collection.
 	AddModel(ColumnScanner) error
-
-	ColumnScanner
 }
 
 type Model interface {
@@ -58,13 +58,13 @@ func NewModel(values ...interface{}) (Model, error) {
 		return v0, nil
 	case HooklessModel:
 		return newModelWithHookStubs(v0), nil
-	case sql.Scanner:
+	case types.ValueScanner, sql.Scanner:
 		return Scan(v0), nil
 	}
 
 	v := reflect.ValueOf(v0)
 	if !v.IsValid() {
-		return nil, errors.New("pg: Model(nil)")
+		return nil, errModelNil
 	}
 	if v.Kind() != reflect.Ptr {
 		return nil, fmt.Errorf("pg: Model(non-pointer %T)", v0)
@@ -73,7 +73,9 @@ func NewModel(values ...interface{}) (Model, error) {
 
 	switch v.Kind() {
 	case reflect.Struct:
-		return newStructTableModelValue(v), nil
+		if v.Type() != timeType {
+			return newStructTableModelValue(v), nil
+		}
 	case reflect.Slice:
 		typ := v.Type()
 		structType := indirectType(typ.Elem())

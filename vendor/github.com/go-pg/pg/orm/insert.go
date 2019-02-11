@@ -1,7 +1,6 @@
 package orm
 
 import (
-	"errors"
 	"fmt"
 	"reflect"
 )
@@ -32,19 +31,9 @@ func (q *insertQuery) AppendQuery(b []byte) ([]byte, error) {
 	if q.q.stickyErr != nil {
 		return nil, q.q.stickyErr
 	}
-	if q.q.model == nil {
-		return nil, errors.New("pg: Model(nil)")
-	}
-
-	table := q.q.model.Table()
-	value := q.q.model.Value()
-	var err error
 
 	if len(q.q.with) > 0 {
-		b, err = q.q.appendWith(b)
-		if err != nil {
-			return nil, err
-		}
+		b = q.q.appendWith(b)
 	}
 
 	b = append(b, "INSERT INTO "...)
@@ -69,8 +58,9 @@ func (q *insertQuery) AppendQuery(b []byte) ([]byte, error) {
 		}
 
 		if len(fields) == 0 {
-			fields = table.Fields
+			fields = q.q.model.Table().Fields
 		}
+		value := q.q.model.Value()
 
 		b = append(b, " ("...)
 		b = appendColumns(b, "", fields)
@@ -101,6 +91,17 @@ func (q *insertQuery) AppendQuery(b []byte) ([]byte, error) {
 		if q.q.onConflictDoUpdate() {
 			if len(q.q.set) > 0 {
 				b = q.q.appendSet(b)
+			} else {
+				fields, err := q.q.getDataFields()
+				if err != nil {
+					return nil, err
+				}
+
+				if len(fields) == 0 {
+					fields = q.q.model.Table().DataFields
+				}
+
+				b = q.appendSetExcluded(b, fields)
 			}
 
 			if len(q.q.updWhere) > 0 {
@@ -116,7 +117,7 @@ func (q *insertQuery) AppendQuery(b []byte) ([]byte, error) {
 		b = appendReturningFields(b, q.returningFields)
 	}
 
-	return b, nil
+	return b, q.q.stickyErr
 }
 
 func (q *insertQuery) appendValues(b []byte, fields []*Field, v reflect.Value) []byte {
@@ -131,7 +132,7 @@ func (q *insertQuery) appendValues(b []byte, fields []*Field, v reflect.Value) [
 			continue
 		}
 
-		if (f.Default != "" || f.OmitZero()) && f.IsZero(v) {
+		if (f.Default != "" || f.OmitZero()) && f.IsZeroValue(v) {
 			b = append(b, "DEFAULT"...)
 			q.addReturningField(f)
 		} else {
@@ -141,13 +142,26 @@ func (q *insertQuery) appendValues(b []byte, fields []*Field, v reflect.Value) [
 	return b
 }
 
-func (ins *insertQuery) addReturningField(field *Field) {
-	for _, f := range ins.returningFields {
+func (q *insertQuery) addReturningField(field *Field) {
+	for _, f := range q.returningFields {
 		if f == field {
 			return
 		}
 	}
-	ins.returningFields = append(ins.returningFields, field)
+	q.returningFields = append(q.returningFields, field)
+}
+
+func (q *insertQuery) appendSetExcluded(b []byte, fields []*Field) []byte {
+	b = append(b, " SET "...)
+	for i, f := range fields {
+		if i > 0 {
+			b = append(b, ", "...)
+		}
+		b = append(b, f.Column...)
+		b = append(b, " = EXCLUDED."...)
+		b = append(b, f.Column...)
+	}
+	return b
 }
 
 func appendReturningFields(b []byte, fields []*Field) []byte {

@@ -134,7 +134,7 @@ func (f Formatter) String() string {
 	return " " + strings.Join(ss, " ")
 }
 
-func (f Formatter) copy() Formatter {
+func (f Formatter) clone() Formatter {
 	var cp Formatter
 	for param, value := range f.namedParams {
 		cp.SetParam(param, value)
@@ -149,8 +149,8 @@ func (f *Formatter) SetParam(param string, value interface{}) {
 	f.namedParams[param] = value
 }
 
-func (f *Formatter) WithParam(param string, value interface{}) Formatter {
-	cp := f.copy()
+func (f Formatter) WithParam(param string, value interface{}) Formatter {
+	cp := f.clone()
 	cp.SetParam(param, value)
 	return cp
 }
@@ -181,11 +181,11 @@ func (f Formatter) append(dst []byte, p *parser.Parser, params []interface{}) []
 	var paramsIndex int
 	var namedParamsOnce bool
 	var tableParams *tableParams
-	var model tableModel
+	var model TableModel
 
 	if len(params) > 0 {
 		var ok bool
-		model, ok = params[len(params)-1].(tableModel)
+		model, ok = params[len(params)-1].(TableModel)
 		if ok {
 			params = params[:len(params)-1]
 		}
@@ -204,7 +204,8 @@ func (f Formatter) append(dst []byte, p *parser.Parser, params []interface{}) []
 		}
 		dst = append(dst, b...)
 
-		if id, numeric := p.ReadIdentifier(); id != "" {
+		id, numeric := p.ReadIdentifier()
+		if id != "" {
 			if numeric {
 				idx, err := strconv.Atoi(id)
 				if err != nil {

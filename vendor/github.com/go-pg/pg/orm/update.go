@@ -1,7 +1,6 @@
 package orm
 
 import (
-	"errors"
 	"fmt"
 	"reflect"
 
@@ -39,19 +38,14 @@ func (q updateQuery) AppendQuery(b []byte) ([]byte, error) {
 		return nil, q.q.stickyErr
 	}
 
-	var err error
-
 	if len(q.q.with) > 0 {
-		b, err = q.q.appendWith(b)
-		if err != nil {
-			return nil, err
-		}
+		b = q.q.appendWith(b)
 	}
 
 	b = append(b, "UPDATE "...)
 	b = q.q.appendFirstTableWithAlias(b)
 
-	b, err = q.mustAppendSet(b)
+	b, err := q.mustAppendSet(b)
 	if err != nil {
 		return nil, err
 	}
@@ -69,27 +63,38 @@ func (q updateQuery) AppendQuery(b []byte) ([]byte, error) {
 		}
 	}
 
-	b = append(b, " WHERE "...)
-	if isSliceModel {
-		table := q.q.model.Table()
-		b = appendWhereColumnAndColumn(b, table.Alias, table.PKs)
-
-		if q.q.hasWhere() {
-			b = append(b, " AND "...)
-			b = q.q.appendWhere(b)
-		}
-	} else {
-		b, err = q.q.mustAppendWhere(b)
-		if err != nil {
-			return nil, err
-		}
+	b, err = q.mustAppendWhere(b, isSliceModel)
+	if err != nil {
+		return nil, err
 	}
 
 	if len(q.q.returning) > 0 {
 		b = q.q.appendReturning(b)
 	}
 
-	return b, nil
+	return b, q.q.stickyErr
+}
+
+func (q updateQuery) mustAppendWhere(b []byte, isSliceModel bool) ([]byte, error) {
+	b = append(b, " WHERE "...)
+
+	if isSliceModel {
+		if !q.q.hasModel() {
+			return nil, errModelNil
+		}
+
+		table := q.q.model.Table()
+		if len(table.PKs) > 0 {
+			b = appendWhereColumnAndColumn(b, table.Alias, table.PKs)
+			if q.q.hasWhere() {
+				b = append(b, " AND "...)
+				b = q.q.appendWhere(b)
+			}
+			return b, nil
+		}
+	}
+
+	return q.q.mustAppendWhere(b)
 }
 
 func (q updateQuery) mustAppendSet(b []byte) ([]byte, error) {
@@ -98,8 +103,8 @@ func (q updateQuery) mustAppendSet(b []byte) ([]byte, error) {
 		return b, nil
 	}
 
-	if q.q.model == nil {
-		return nil, errors.New("pg: Model(nil)")
+	if !q.q.hasModel() {
+		return nil, errModelNil
 	}
 
 	b = append(b, " SET "...)
@@ -134,7 +139,7 @@ func (q updateQuery) appendSetStruct(b []byte, strct reflect.Value) ([]byte, err
 
 	pos := len(b)
 	for _, f := range fields {
-		omitZero := f.OmitZero() && f.IsZero(strct)
+		omitZero := f.OmitZero() && f.IsZeroValue(strct)
 		if omitZero && q.omitZero {
 			continue
 		}
@@ -153,11 +158,7 @@ func (q updateQuery) appendSetStruct(b []byte, strct reflect.Value) ([]byte, err
 			continue
 		}
 
-		if f.OmitZero() && f.IsZero(strct) {
-			b = append(b, "NULL"...)
-		} else {
-			b = f.AppendValue(b, strct, 1)
-		}
+		b = f.AppendValue(b, strct, 1)
 	}
 
 	return b, nil
@@ -205,8 +206,7 @@ func (q updateQuery) appendSliceModelData(b []byte) ([]byte, error) {
 func (q updateQuery) appendSliceValues(b []byte, fields []*Field, slice reflect.Value) []byte {
 	b = append(b, "(VALUES ("...)
 	for i := 0; i < slice.Len(); i++ {
-		el := indirect(slice.Index(i))
-		b = q.appendValues(b, fields, el)
+		b = q.appendValues(b, fields, slice.Index(i))
 		if i != slice.Len()-1 {
 			b = append(b, "), ("...)
 		}
@@ -229,11 +229,7 @@ func (q updateQuery) appendValues(b []byte, fields []*Field, strct reflect.Value
 			continue
 		}
 
-		if f.OmitZero() && f.IsZero(strct) {
-			b = append(b, "NULL"...)
-		} else {
-			b = f.AppendValue(b, strct, 1)
-		}
+		b = f.AppendValue(b, indirect(strct), 1)
 		if f.HasFlag(customTypeFlag) {
 			b = append(b, "::"...)
 			b = append(b, f.SQLType...)

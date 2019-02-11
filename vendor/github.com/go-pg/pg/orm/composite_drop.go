@@ -1,7 +1,5 @@
 package orm
 
-import "errors"
-
 type DropCompositeOptions struct {
 	IfExists bool
 	Cascade  bool
@@ -34,7 +32,7 @@ func (q dropCompositeQuery) AppendQuery(b []byte) ([]byte, error) {
 		return nil, q.q.stickyErr
 	}
 	if q.q.model == nil {
-		return nil, errors.New("pg: Model(nil)")
+		return nil, errModelNil
 	}
 
 	b = append(b, "DROP TYPE "...)
@@ -46,5 +44,5 @@ func (q dropCompositeQuery) AppendQuery(b []byte) ([]byte, error) {
 		b = append(b, " CASCADE"...)
 	}
 
-	return b, nil
+	return b, q.q.stickyErr
 }

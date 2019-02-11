@@ -2,7 +2,6 @@ package store
 
 import (
 	"log"
-	"time"
 
 	"github.com/go-pg/pg"
 	"github.com/go-pg/pg/orm"
@@ -17,6 +16,15 @@ type SQLStore struct {
 	db             *pg.DB
 }
 
+type dbLogger struct{}
+
+func (d dbLogger) BeforeQuery(q *pg.QueryEvent) {}
+
+func (d dbLogger) AfterQuery(q *pg.QueryEvent) {
+	query, _ := q.FormattedQuery()
+	log.Printf("%s", query)
+}
+
 // NewSQLStore : Initializes SQLStore object, establishes db connection with
 // the given parameters and return it.
 func NewSQLStore(user, password, database, addr string) SQLStore {
@@ -27,14 +35,7 @@ func NewSQLStore(user, password, database, addr string) SQLStore {
 		Database: database,
 		Addr:     addr,
 	})
-	sqlStore.db.OnQueryProcessed(func(event *pg.QueryProcessedEvent) {
-		query, err := event.FormattedQuery()
-		if err != nil {
-			panic(err)
-		}
-
-		log.Printf("%s %s", time.Since(event.StartTime), query)
-	})
+	sqlStore.db.AddQueryHook(dbLogger{})
 	sqlStore.userSQLStore = NewUserSQLStore(sqlStore)
 	sqlStore.authTokenStore = NewAuthTokenSQLStore(sqlStore)
 	sqlStore.expenseStore = NewExpenseSQLStore(sqlStore)

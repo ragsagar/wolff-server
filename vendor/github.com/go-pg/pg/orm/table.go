@@ -1,7 +1,6 @@
 package orm
 
 import (
-	"bytes"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -11,6 +10,8 @@ import (
 	"time"
 
 	"github.com/go-pg/pg/internal"
+	"github.com/go-pg/pg/internal/iszero"
+	"github.com/go-pg/pg/internal/tag"
 	"github.com/go-pg/pg/types"
 )
 
@@ -25,10 +26,10 @@ const (
 	BeforeDeleteHookFlag
 	AfterDeleteHookFlag
 	discardUnknownColumns
-	softDelete
 )
 
 var timeType = reflect.TypeOf((*time.Time)(nil)).Elem()
+var nullTimeType = reflect.TypeOf((*types.NullTime)(nil)).Elem()
 var ipType = reflect.TypeOf((*net.IP)(nil)).Elem()
 var ipNetType = reflect.TypeOf((*net.IPNet)(nil)).Elem()
 var scannerType = reflect.TypeOf((*sql.Scanner)(nil)).Elem()
@@ -43,11 +44,13 @@ type Table struct {
 	Type       reflect.Type
 	zeroStruct reflect.Value
 
-	TypeName       string
-	Name           types.Q
-	NameForSelects types.Q
-	Alias          types.Q
-	ModelName      string
+	TypeName  string
+	Alias     types.Q
+	ModelName string
+
+	Name               string
+	FullName           types.Q
+	FullNameForSelects types.Q
 
 	allFields     []*Field // read only
 	skippedFields []*Field
@@ -61,12 +64,14 @@ type Table struct {
 	Relations map[string]*Relation
 	Unique    map[string][]*Field
 
+	SoftDeleteField *Field
+
 	flags uint16
 }
 
 func (t *Table) setName(name types.Q) {
-	t.Name = name
-	t.NameForSelects = name
+	t.FullName = name
+	t.FullNameForSelects = name
 	if t.Alias == "" {
 		t.Alias = name
 	}
@@ -78,8 +83,8 @@ func newTable(typ reflect.Type) *Table {
 	t.zeroStruct = reflect.New(t.Type).Elem()
 	t.TypeName = internal.ToExported(t.Type.Name())
 	t.ModelName = internal.Underscore(t.Type.Name())
-	tableName := quoteTableName(tableNameInflector(t.ModelName))
-	t.setName(types.Q(types.AppendField(nil, tableName, 1)))
+	t.Name = tableNameInflector(t.ModelName)
+	t.setName(types.Q(types.AppendField(nil, t.Name, 1)))
 	t.Alias = types.Q(types.AppendField(nil, t.ModelName, 1))
 
 	typ = reflect.PtrTo(t.Type)
@@ -145,7 +150,7 @@ func (t *Table) checkPKs() error {
 }
 
 func (t *Table) mustSoftDelete() error {
-	if !t.HasFlag(softDelete) {
+	if t.SoftDeleteField == nil {
 		return fmt.Errorf("pg: %s does not support soft deletes", t)
 	}
 	return nil
@@ -227,14 +232,14 @@ func (t *Table) addFields(typ reflect.Type, baseIndex []int) {
 			fieldType := indirectType(f.Type)
 			t.addFields(fieldType, append(index, f.Index...))
 
-			pgTag := parseTag(f.Tag.Get("pg"))
+			pgTag := tag.Parse(f.Tag.Get("pg"))
 			_, inherit := pgTag.Options["inherit"]
 			_, override := pgTag.Options["override"]
 			if inherit || override {
 				embeddedTable := newTable(fieldType)
 				t.TypeName = embeddedTable.TypeName
-				t.Name = embeddedTable.Name
-				t.NameForSelects = embeddedTable.NameForSelects
+				t.FullName = embeddedTable.FullName
+				t.FullNameForSelects = embeddedTable.FullNameForSelects
 				t.Alias = embeddedTable.Alias
 				t.ModelName = embeddedTable.ModelName
 			}
@@ -250,7 +255,7 @@ func (t *Table) addFields(typ reflect.Type, baseIndex []int) {
 }
 
 func (t *Table) newField(f reflect.StructField, index []int) *Field {
-	sqlTag := parseTag(f.Tag.Get("sql"))
+	sqlTag := tag.Parse(f.Tag.Get("sql"))
 
 	switch f.Name {
 	case "tableName", "TableName":
@@ -261,21 +266,21 @@ func (t *Table) newField(f reflect.StructField, index []int) *Field {
 		if sqlTag.Name == "_" {
 			t.setName("")
 		} else if sqlTag.Name != "" {
-			s, _ := unquoteTagValue(sqlTag.Name)
+			s, _ := tag.Unquote(sqlTag.Name)
 			t.setName(types.Q(quoteTableName(s)))
 		}
 
 		if v, ok := sqlTag.Options["select"]; ok {
-			v, _ = unquoteTagValue(v)
-			t.NameForSelects = types.Q(quoteTableName(v))
+			v, _ = tag.Unquote(v)
+			t.FullNameForSelects = types.Q(quoteTableName(v))
 		}
 
 		if v, ok := sqlTag.Options["alias"]; ok {
-			v, _ = unquoteTagValue(v)
+			v, _ = tag.Unquote(v)
 			t.Alias = types.Q(quoteTableName(v))
 		}
 
-		pgTag := parseTag(f.Tag.Get("pg"))
+		pgTag := tag.Parse(f.Tag.Get("pg"))
 		if _, ok := pgTag.Options["discard_unknown_columns"]; ok {
 			t.SetFlag(discardUnknownColumns)
 		}
@@ -325,7 +330,7 @@ func (t *Table) newField(f reflect.StructField, index []int) *Field {
 		}
 	}
 	if v, ok := sqlTag.Options["default"]; ok {
-		v, ok = unquoteTagValue(v)
+		v, ok = tag.Unquote(v)
 		if ok {
 			field.Default = types.Q(types.AppendString(nil, v, 1))
 		} else {
@@ -340,15 +345,14 @@ func (t *Table) newField(f reflect.StructField, index []int) *Field {
 		field.SetFlag(ForeignKeyFlag)
 	} else if strings.HasPrefix(field.SQLName, "fk_") {
 		field.SetFlag(ForeignKeyFlag)
-	} else if len(t.PKs) == 0 {
-		if field.SQLName == "id" ||
-			field.SQLName == "uuid" ||
-			field.SQLName == "pk_"+t.ModelName {
+	} else if len(t.PKs) == 0 && !sqlTag.HasOption("nopk") {
+		switch field.SQLName {
+		case "id", "uuid", "pk_" + t.ModelName:
 			field.SetFlag(PrimaryKeyFlag)
 		}
 	}
 
-	pgTag := parseTag(f.Tag.Get("pg"))
+	pgTag := tag.Parse(f.Tag.Get("pg"))
 
 	if _, ok := sqlTag.Options["array"]; ok {
 		field.SetFlag(ArrayFlag)
@@ -365,8 +369,11 @@ func (t *Table) newField(f reflect.StructField, index []int) *Field {
 		field.OnDelete = v
 	}
 
-	if v, ok := sqlTag.Options["composite"]; ok {
-		field.SQLType = v
+	if v, ok := sqlTag.Options["on_update"]; ok {
+		field.OnUpdate = v
+	}
+
+	if _, ok := sqlTag.Options["composite"]; ok {
 		field.append = compositeAppender(f.Type)
 		field.scan = compositeScanner(f.Type)
 	} else if _, ok := pgTag.Options["json_use_number"]; ok {
@@ -385,7 +392,7 @@ func (t *Table) newField(f reflect.StructField, index []int) *Field {
 		field.append = types.Appender(f.Type)
 		field.scan = types.Scanner(f.Type)
 	}
-	field.isZero = isZeroFunc(f.Type)
+	field.isZero = iszero.Checker(f.Type)
 
 	t.allFields = append(t.allFields, field)
 	if skip {
@@ -394,10 +401,14 @@ func (t *Table) newField(f reflect.StructField, index []int) *Field {
 		return nil
 	}
 
-	switch field.SQLName {
-	case "deleted_at":
-		if _, ok := pgTag.Options["soft_delete"]; ok && field.Type == timeType {
-			t.SetFlag(softDelete)
+	if _, ok := pgTag.Options["soft_delete"]; ok {
+		switch field.Type {
+		case timeType, nullTimeType:
+			t.SoftDeleteField = field
+		default:
+			err := fmt.Errorf(
+				"soft_delete is only supported for time.Time and pg.NullTime")
+			panic(err)
 		}
 	}
 
@@ -449,7 +460,7 @@ func (t *Table) initInlines() {
 	for _, f := range t.skippedFields {
 		if f.Type.Kind() == reflect.Struct {
 			joinTable := _tables.get(f.Type, true)
-			t.inlineFields(f, joinTable.allFields)
+			t.inlineFields(f, joinTable, nil)
 		}
 	}
 }
@@ -474,7 +485,7 @@ func (t *Table) tryRelationSlice(field *Field) bool {
 		return false
 	}
 
-	pgTag := parseTag(field.Field.Tag.Get("pg"))
+	pgTag := tag.Parse(field.Field.Tag.Get("pg"))
 	joinTable := _tables.get(elemType, true)
 
 	fk, fkOK := pgTag.Options["fk"]
@@ -610,7 +621,7 @@ func (t *Table) tryRelationSlice(field *Field) bool {
 }
 
 func (t *Table) tryRelationStruct(field *Field) bool {
-	pgTag := parseTag(field.Field.Tag.Get("pg"))
+	pgTag := tag.Parse(field.Field.Tag.Get("pg"))
 	joinTable := _tables.get(field.Type, true)
 	if len(joinTable.allFields) == 0 {
 		return false
@@ -618,12 +629,17 @@ func (t *Table) tryRelationStruct(field *Field) bool {
 
 	res := t.tryHasOne(joinTable, field, pgTag) ||
 		t.tryBelongsToOne(joinTable, field, pgTag)
-	t.inlineFields(field, joinTable.allFields)
+	t.inlineFields(field, joinTable, nil)
 	return res
 }
 
-func (t *Table) inlineFields(strct *Field, structFields []*Field) {
-	for _, f := range structFields {
+func (t *Table) inlineFields(strct *Field, joinTable *Table, path map[*Table]struct{}) {
+	if path == nil {
+		path = make(map[*Table]struct{}, 0)
+	}
+	path[joinTable] = struct{}{}
+
+	for _, f := range joinTable.allFields {
 		f = f.Copy()
 		f.GoName = strct.GoName + "_" + f.GoName
 		f.SQLName = strct.SQLName + "__" + f.SQLName
@@ -631,6 +647,15 @@ func (t *Table) inlineFields(strct *Field, structFields []*Field) {
 		f.Index = appendNew(strct.Index, f.Index...)
 		if _, ok := t.FieldsMap[f.SQLName]; !ok {
 			t.FieldsMap[f.SQLName] = f
+		}
+
+		if f.Type.Kind() != reflect.Struct {
+			continue
+		}
+
+		tt := _tables.get(f.Type, true)
+		if _, ok := path[tt]; !ok {
+			t.inlineFields(f, tt, path)
 		}
 	}
 }
@@ -656,10 +681,16 @@ func isColumn(typ reflect.Type) bool {
 	return typ.Implements(scannerType) || reflect.PtrTo(typ).Implements(scannerType)
 }
 
-func fieldSQLType(field *Field, pgTag, sqlTag *tag) string {
+func fieldSQLType(field *Field, pgTag, sqlTag *tag.Tag) string {
 	if typ, ok := sqlTag.Options["type"]; ok {
 		field.SetFlag(customTypeFlag)
-		typ, _ = unquoteTagValue(typ)
+		typ, _ = tag.Unquote(typ)
+		return typ
+	}
+
+	if typ, ok := sqlTag.Options["composite"]; ok {
+		field.SetFlag(customTypeFlag)
+		typ, _ = tag.Unquote(typ)
 		return typ
 	}
 
@@ -671,7 +702,7 @@ func fieldSQLType(field *Field, pgTag, sqlTag *tag) string {
 		return "hstore"
 	}
 
-	if field.HasFlag(ArrayFlag) {
+	if field.HasFlag(ArrayFlag) && field.Type.Kind() == reflect.Slice {
 		sqlType := sqlType(field.Type.Elem())
 		return sqlType + "[]"
 	}
@@ -758,8 +789,8 @@ func sqlTypeEqual(a, b string) bool {
 	return pkSQLType(a) == pkSQLType(b)
 }
 
-func (t *Table) tryHasOne(joinTable *Table, field *Field, tag *tag) bool {
-	fk, fkOK := tag.Options["fk"]
+func (t *Table) tryHasOne(joinTable *Table, field *Field, pgTag *tag.Tag) bool {
+	fk, fkOK := pgTag.Options["fk"]
 	if fkOK {
 		if fk == "-" {
 			return false
@@ -782,8 +813,8 @@ func (t *Table) tryHasOne(joinTable *Table, field *Field, tag *tag) bool {
 	return false
 }
 
-func (t *Table) tryBelongsToOne(joinTable *Table, field *Field, tag *tag) bool {
-	fk, fkOK := tag.Options["fk"]
+func (t *Table) tryBelongsToOne(joinTable *Table, field *Field, pgTag *tag.Tag) bool {
+	fk, fkOK := pgTag.Options["fk"]
 	if fkOK {
 		if fk == "-" {
 			return false
@@ -882,15 +913,17 @@ func (t *Table) getField(name string) *Field {
 	return t.FieldsMap[name]
 }
 
-func scanJSONValue(v reflect.Value, b []byte) error {
+func scanJSONValue(v reflect.Value, rd types.Reader, n int) error {
 	if !v.CanSet() {
 		return fmt.Errorf("pg: Scan(non-pointer %s)", v.Type())
 	}
-	if b == nil {
+
+	if n == -1 {
 		v.Set(reflect.New(v.Type()).Elem())
 		return nil
 	}
-	dec := json.NewDecoder(bytes.NewReader(b))
+
+	dec := json.NewDecoder(rd)
 	dec.UseNumber()
 	return dec.Decode(v.Addr().Interface())
 }

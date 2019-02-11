@@ -33,18 +33,13 @@ func (q selectQuery) AppendQuery(b []byte) ([]byte, error) {
 		return nil, q.q.stickyErr
 	}
 
-	var err error
-
 	cteCount := q.count != "" && (len(q.q.group) > 0 || q.isDistinct())
 	if cteCount {
 		b = append(b, `WITH "_count_wrapper" AS (`...)
 	}
 
 	if len(q.q.with) > 0 {
-		b, err = q.q.appendWith(b)
-		if err != nil {
-			return nil, err
-		}
+		b = q.q.appendWith(b)
 	}
 
 	b = append(b, "SELECT "...)
@@ -137,7 +132,7 @@ func (q selectQuery) AppendQuery(b []byte) ([]byte, error) {
 		b = append(b, ` FROM "_count_wrapper"`...)
 	}
 
-	return b, nil
+	return b, q.q.stickyErr
 }
 
 func (q selectQuery) appendColumns(b []byte) []byte {
@@ -145,7 +140,7 @@ func (q selectQuery) appendColumns(b []byte) []byte {
 
 	if q.q.columns != nil {
 		b = q.q.appendColumns(b)
-	} else if q.q.hasModel() {
+	} else if q.q.hasExplicitModel() {
 		table := q.q.model.Table()
 		b = appendColumns(b, table.Alias, table.Fields)
 	} else {
@@ -186,7 +181,7 @@ func (q selectQuery) appendTables(b []byte) []byte {
 
 	if q.q.modelHasTableName() {
 		table := q.q.model.Table()
-		b = q.q.FormatQuery(b, string(table.NameForSelects))
+		b = q.q.FormatQuery(b, string(table.FullNameForSelects))
 		if table.Alias != "" {
 			b = append(b, " AS "...)
 			b = append(b, table.Alias...)
