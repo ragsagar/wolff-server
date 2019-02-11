@@ -85,7 +85,7 @@ func (m MockExpenseStore) Store(expense *model.Expense) error {
 	return nil
 }
 
-func (m MockExpenseStore) GetExpenses(userId string) ([]model.Expense, error) {
+func (m MockExpenseStore) GetExpenses(userId string, filter store.ExpenseFilter) ([]model.Expense, error) {
 	return nil, nil
 }
 

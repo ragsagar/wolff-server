@@ -2,7 +2,11 @@ package store
 
 import (
 	"log"
+	"net/url"
+	"time"
 
+	"github.com/go-pg/pg/orm"
+	"github.com/go-pg/pg/urlvalues"
 	"github.com/ragsagar/wolff/model"
 )
 
@@ -34,9 +38,9 @@ func (ess ExpenseSQLStore) GetByID(id string) (*model.Expense, error) {
 	return expense, nil
 }
 
-func (ess ExpenseSQLStore) GetExpenses(userId string) ([]model.Expense, error) {
+func (ess ExpenseSQLStore) GetExpenses(userId string, filter ExpenseFilter) ([]model.Expense, error) {
 	var expenses []model.Expense
-	err := ess.sqlStore.db.Model(&expenses).Column("expense.*").Relation("Category").Relation("Account").Where("expense.user_id = ?", userId).Select()
+	err := ess.sqlStore.db.Model(&expenses).Column("expense.*").Relation("Category").Relation("Account").Where("expense.user_id = ?", userId).Apply(filter.Filter).Select()
 	if err != nil {
 		return nil, err
 	}
@@ -75,3 +79,45 @@ func (ess ExpenseSQLStore) DeleteAccount(expenseAccount *model.ExpenseAccount) e
 // func (ess ExpenseSQLStore) DeleteExpenseWithUserID(id, userId string) error {
 // 	return ess.sqlStore.db.Delete()
 // }
+
+type ExpenseFilter struct {
+	*urlvalues.Pager
+	// Filter(*orm.Query) (*orm.Query, error)
+	year  int
+	month int
+}
+
+func (f ExpenseFilter) Filter(q *orm.Query) (*orm.Query, error) {
+	if f.year > 0 {
+		q = q.Where("EXTRACT(YEAR FROM expense.date) = ?", f.year)
+	}
+
+	if f.month > 0 {
+		q = q.Where("EXTRACT(MONTH FROM expense.date) = ?", f.month)
+	}
+
+	q = q.Apply(f.Pager.Pagination)
+	return q, nil
+}
+
+func (f *ExpenseFilter) ParseURLValues(values url.Values) {
+	v := urlvalues.Values(values)
+	currentTime := time.Now()
+
+	year, err := v.Int("year")
+	if err != nil || year == 0 {
+		// default year to current year
+		f.year = currentTime.Year()
+	} else {
+		f.year = year
+	}
+
+	month, err := v.Int("month")
+	if err != nil || month == 0 {
+		f.month = int(currentTime.Month())
+	} else {
+		f.month = month
+	}
+
+	f.Pager = urlvalues.NewPager(v)
+}

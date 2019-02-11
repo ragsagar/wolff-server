@@ -9,6 +9,7 @@ import (
 	"github.com/go-pg/pg"
 	"github.com/gorilla/mux"
 	"github.com/ragsagar/wolff/model"
+	"github.com/ragsagar/wolff/store"
 )
 
 func (srv *Server) InitExpenseAPIs() {
@@ -64,7 +65,9 @@ func createExpense(c *Context, w http.ResponseWriter, r *http.Request) {
 }
 
 func getExpenses(c *Context, w http.ResponseWriter, r *http.Request) {
-	expenses, err := c.Srv.Store.Expense().GetExpenses(c.User.ID)
+	filter := store.ExpenseFilter{}
+	filter.ParseURLValues(r.URL.Query())
+	expenses, err := c.Srv.Store.Expense().GetExpenses(c.User.ID, filter)
 	if err != nil {
 		log.Println("Erorr in getting expenses: ", err.Error())
 		writeJSONResponse(errorResponse(errorDbFetch), http.StatusInternalServerError, w)
@@ -78,7 +81,11 @@ func getExpenses(c *Context, w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	w.Write(jsonData)
+	if string(jsonData) == "null" {
+		w.Write([]byte("{}"))
+	} else {
+		w.Write(jsonData)
+	}
 }
 
 func deleteExpense(c *Context, w http.ResponseWriter, r *http.Request) {
