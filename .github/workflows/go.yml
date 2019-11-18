@@ -19,6 +19,8 @@ jobs:
       run: |
           echo "##[set-env name=GOPATH;]$(dirname $GITHUB_WORKSPACE)"
           echo "##[add-path]$(dirname $GITHUB_WORKSPACE)/bin"
+          export PATH=$PATH:$(go env GOPATH)/bin
+          export GOBIN=$(go env GOPATH)/bin
       shell: bash
 
     - name: Check out code into the Go module directory
