@@ -16,9 +16,12 @@ jobs:
     - name: Check out code into the Go module directory
       uses: actions/checkout@v1
 
-    - name: Get dependencies
+    - name: Install dep
       run:
         curl https://raw.githubusercontent.com/golang/dep/master/install.sh | sh
+        
+    - name: Install dependencies
+      run: 
         dep ensure
         
     - name: Run tests
